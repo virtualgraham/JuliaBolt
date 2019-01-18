@@ -1,0 +1,9 @@
+JuliaBolt is ported from Neobolt: Neo4j Bolt connector for Python
+https://github.com/neo4j-drivers/neobolt
+
+Original NOTICE:
+
+Neo4j
+Copyright (c) 2002-2019 Neo4j Sweden AB (referred to in this notice as "Neo4j") [http://neo4j.com]
+
+This product includes software ("Software") developed by Neo4j
