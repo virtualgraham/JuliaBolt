@@ -93,8 +93,6 @@ function pack(p::Packer, value::Integer)
         write(p, [0xCB])
         write(p, struct_pack(Int64(value)))
     else
-        #println(typeof(INT64_HI), INT64_HI)
-        #println(typeof(INT64_LO), INT64_LO)
         throw(ErrorException("Integer $(value) out of range"))
     end
 end

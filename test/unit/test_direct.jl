@@ -58,13 +58,11 @@ end
         try
             connections = _pool.connections[address]
         catch e
-            println("-----", e)
             @test expected_active == 0
             @test expected_inactive == 0
             return
         end
 
-        println("+++++")
         @test expected_active == length([cx for cx in connections if cx.in_use])
         @test expected_inactive == length([cx for cx in connections if !cx.in_use])
     end

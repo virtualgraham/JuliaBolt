@@ -32,8 +32,8 @@ using Sockets
 using BufferedStreams
 
 export bolt_connect, bolt_run, bolt_sync, bolt_begin, bolt_commit, bolt_rollback, bolt_close, bolt_pull_all, bolt_discard_all
-export timedout, acquire_direct, release, in_use_connection_count
-export Connection, ConnectionPool, ConnectionErrorHandler, TransientError
+export timedout, acquire_direct, release, in_use_connection_count, acquire, from_uri, DEFAULT_PORT
+export Connection, ConnectionPool, ConnectionErrorHandler, TransientError, Structure
 
 const version = v"0.1.0"
 
@@ -47,6 +47,7 @@ const DEFAULT_MAX_CONNECTION_LIFETIME = 3600
 const DEFAULT_USER_AGENT = "juliabolt/$(string(version)) Julia/$(string(VERSION)) ($(string(Sys.KERNEL)))"
 
 include("io.jl")
+include("addressing.jl")
 include("strpack.jl")
 include("errors.jl")
 
@@ -138,13 +139,10 @@ end
 
 function supports(s::ServerInfo, feature::String)::Bool
     if agent(s) == nothing
-        #println("VVVVVV agent(s)==nothing")
         return false
     elseif !startswith(agent(s), "Neo4j/")
-        #println("VVVVVV !startswith Neo4j")
         return false
     elseif feature == "bytes"
-        #println("VVVVVV", version_info(s))
         return version_info(s) >= [3,2]
     elseif feature == "statement_reuse"
         return version_info(s) >= [3,2]
@@ -188,7 +186,7 @@ mutable struct Connection
 
     # Error #: Error class used for raising connection errors
     # error_handler
-    
+
     function Connection(protocol_version::Integer, address::Tuple{IPAddr, UInt16}, sock::IO; config...)
         output_buffer = ChunkedOutputBuffer()
         
@@ -242,7 +240,6 @@ end
 # Connection ---------------------- #
 
 function init(c::Connection)
-    #println("connection init")
     append(c, 0x01, [c.user_agent, c.auth_dict], 
             Response(c, on_success=(r, m)->merge!(c.server.metadata, m), on_failure=on_init_failure))
     bolt_sync(c)
@@ -252,14 +249,12 @@ end
 # Connection ---------------------- #
 
 function hello(c::Connection)
-    #println("connection hello")
     headers = Dict("user_agent"=>c.user_agent)
     merge!(headers, c.auth_dict)
     logged_headers = Dict(headers)
     if haskey(logged_headers, "credentials")
         logged_headers["credentials"] = "*******"
     end
-    #println(logged_headers)
     
     append(c, 0x01, [headers], Response(c, on_success=(r, m)->merge!(c.server.metadata, m), on_failure=on_init_failure))
 
@@ -293,7 +288,7 @@ function bolt_run(c::Connection, statement::String, parameters=nothing; bookmark
             extra["tx_metadata"] = metadata
         end
         if timeout != nothing
-            extra["tx_timeout"] = 1000 * Integer(timeout)
+            extra["tx_timeout"] = Integer(floor(1000 * timeout))
         end
         fields = [statement, parameters, extra]
     else
@@ -325,7 +320,6 @@ end
 
 function bolt_begin(c::Connection; timeout::Union{Number, Nothing}=nothing, bookmarks::Union{Vector, Nothing}=nothing, metadata::Union{Dict, Nothing}=nothing, handlers...)
     if c.protocol_version >= 3
-        println("tx protocol_version >= 3")
         extra = Dict()
         if bookmarks != nothing
             extra["bookmarks"] = bookmarks
@@ -334,11 +328,10 @@ function bolt_begin(c::Connection; timeout::Union{Number, Nothing}=nothing, book
             extra["tx_metadata"] = metadata
         end
         if timeout != nothing
-            extra["tx_timeout"] = timeout
+            extra["tx_timeout"] = Integer(floor(1000*timeout))
         end
         append(c, 0x11, [extra], Response(c; handlers...))
     else
-        println("tx protocol_version < 3")
         extra = Dict()
         if bookmarks != nothing
             if c.protocol_version < 2
@@ -423,7 +416,6 @@ end
 
 function send(c::Connection) 
     data = view(c.output_buffer)
-    #println("data", data)
     Base.write(c.socket, data)
     clear(c.output_buffer)
 end
@@ -431,21 +423,15 @@ end
 # Connection ---------------------- #
 
 function fetch(c::Connection)
-    #println("fetching ", length(c.responses))
-    
     if c.closed
-        #println("fetching early return 1")
         throw(ErrorException("Failed to read from closed connection."))
     elseif c.defunct
-        #println("fetching early return 2")
         throw(ErrorException("Failed to read from closed connection."))
     elseif c.responses == nothing || length(c.responses) == 0
-        #println("fetching early return 3")
         return 0, 0
     end
 
     receive(c)
-    #println("received")
 
     details, summary_signature, summary_metadata = unpack(c)
 
@@ -454,7 +440,6 @@ function fetch(c::Connection)
     end
 
     if summary_signature == nothing
-        #println("fetching early return 4")
         return length(details), 0
     end
     
@@ -462,7 +447,6 @@ function fetch(c::Connection)
 
     response.complete = true
 
-    #println("response callback time")
     if summary_signature == 0x70
         handle_success(response, if (summary_metadata != nothing) summary_metadata else Dict() end)
     elseif summary_signature == 0x7E
@@ -476,7 +460,6 @@ function fetch(c::Connection)
         throw(ErrorException("Unexpected response message with signature $(summary_signature)"))
     end
 
-    #println("done fetching", length(details), 1)
     return length(details), 1
 end
 
@@ -538,7 +521,6 @@ end
 
 function bolt_sync(c::Connection)
     send(c)
-    #println("sync send complete")
     detail_count = summary_count = 0
     while !isempty(c.responses)
         response = c.responses[1]
@@ -548,7 +530,6 @@ function bolt_sync(c::Connection)
             summary_count += summary_delta
         end
     end
-    #println("detail_count, summary_count", detail_count, summary_count)
     return detail_count, summary_count
 end
 
@@ -702,7 +683,7 @@ const DEFAULT_CONNECTION_ACQUISITION_TIMEOUT = 60
 
 mutable struct ConnectionPool <: AbstractConnectionPool
     connector::Function
-    address::Tuple{IPAddr, UInt16}
+    address::Address
     connection_error_handler
     max_connection_pool_size
     connection_acquisition_timeout
@@ -733,7 +714,6 @@ function acquire_direct(c::ConnectionPool, address)
     
     try
         lock(c.lock)
-
         if haskey(c.connections, address)
             connections = c.connections[address]
         else
@@ -741,21 +721,20 @@ function acquire_direct(c::ConnectionPool, address)
         end
         
         connection_acquisition_start_timestamp = round(Int64, time() * 1000)
-        
         while true
             i = 1
             while i <= length(connections)
                 connection = connections[i]
                 if connection.closed || connection.defunct || timedout(connection)
                     splice!(connections,i)
-                else
+5.                else
                     i += 1
                 end
                 if !connection.in_use
+                    connection.in_use = true
                     return connection
                 end
             end
-
             can_create_new_connection = c.max_connection_pool_size == INFINITE || length(connections) < c.max_connection_pool_size        
             if can_create_new_connection
                 
@@ -778,11 +757,9 @@ function acquire_direct(c::ConnectionPool, address)
             if span_timeout > 0
                 wait(c.cond)
                 if c.connection_acquisition_timeout <= (round(Int64, time() * 1000) - connection_acquisition_start_timestamp)
-                    #println("A %%%%%%%")
                     throw(ErrorException("Failed to obtain a connection from pool within $(c.connection_acquisition_timeout)s"))
                 end
             else
-                #println("B %%%%%%%")
                 throw(ErrorException("Failed to obtain a connection from pool within $(c.connection_acquisition_timeout)s"))
             end
         end
@@ -794,7 +771,8 @@ end
 
 # Connection Pool ----------------- #
 
-acquire(c::ConnectionPool) = acquire_direct(c, c.address)
+
+acquire(c::ConnectionPool, access_mode=nothing) = acquire_direct(c, c.address)
 
 
 # Connection Pool ----------------- #
@@ -916,7 +894,6 @@ end
 #####################################
 
 function handshake(socket::IO; config...)
-    #println("handshake")
     address = (local_ip, local_port) = Sockets.getsockname(socket)
 
     
@@ -925,18 +902,11 @@ function handshake(socket::IO; config...)
 
     handshake = [MAGIC_PREAMBLE; supported_versions]
     handshake .= hton.(handshake)
-    
-    #println("write")
 
     Base.write(socket, handshake)
 
-    #println("read")
-            
     agreed_version = ntoh(Base.read(socket, UInt32))
     
-    #println(typeof(agreed_version))
-    #println(agreed_version)
-
     if agreed_version in [1,2]
         connection = Connection(agreed_version, address, socket; config...)
         init(connection)
@@ -956,10 +926,9 @@ end
 
 # JuliaBolt Module Functions -------- #
 
-function bolt_connect(host::String=DEFAULT_HOST, port::Integer=DEFAULT_PORT; config...)
-    println("connect")
+function bolt_connect(address; config...)
     try
-        socket = Sockets.connect(host, port)
+        socket = Sockets.connect(address.host, address.port)
         connection = handshake(socket; config...)
         return connection
     catch ex

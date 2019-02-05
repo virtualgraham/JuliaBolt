@@ -68,7 +68,6 @@ function read_int(m::MessageFrame)
     if m.current_pane == -1
         return -1
     end
-    # println("m.current_pane", m.current_pane)
     (p, q) = m.panes[m.current_pane + 1] #index
     size = q - p
     value = m.data_view[p + m.current_offset + 1] #index
@@ -194,8 +193,8 @@ function read_some(s::IO, limit=0)
     try
         while true
             t = Base.read(s, UInt8)
+            #println("> ", Char(t))
             append!(b, t)
-            #println(">", t, " ", Char(t))
             if t == 0x00 || (limit > 0 && length(b) == limit)
                 break
             end
@@ -214,9 +213,9 @@ function read_some_into(s::IO, b::AbstractArray, limit=length(b))
                 return i - 1
             end
             t = Base.read(s, UInt8)
+            #println("> ", Char(t))
             b[i] = t
             i += 1
-            #println(">", t, " ", Char(t))
             if t == 0x00
                 return i - 1
             end
@@ -227,30 +226,31 @@ function read_some_into(s::IO, b::AbstractArray, limit=length(b))
 end 
 
 function receive(c::ChunkedInputBuffer, s::IO, n::Integer)
-    #println("io receive", n)
     try
         new_extent = c.extent + n
         overflow = new_extent - length(c.data)
         if overflow > 0
             if recycle(c)
-                #println("io receive recycle(c)")
                 return receive(c, s, n)
             end
-            #println("io receive read")
             data = read_some(s, n)
             data_size = length(data)
             new_extent = c.extent + data_size
+
+            if new_extent > length(c.data)
+                resize!(c.data, new_extent)
+            end
+        
             c.data[(c.extent+1):new_extent] = data #index
             c.data_view = Base.view(c.data, :)
         else
-            #println("io receive readbytes ", (c.extent+1):new_extent)
             data_size = read_some_into(s, Base.view(c.data_view, (c.extent+1):new_extent)) #index
             new_extent = c.extent + data_size
         end
         c.extent = new_extent
         return data_size
     catch e
-        #println("eee", e)
+        println("receive error")
         return -1
     end
 end
@@ -260,7 +260,6 @@ end
 function receive_message(c::ChunkedInputBuffer, s::IO, n::Integer)
     while !frame_message(c)
         received = receive(c, s, n)
-        #println("receive_message received", received)
         if received <= 0
             return received
         end
@@ -276,6 +275,7 @@ function recycle(c::ChunkedInputBuffer)
         return false
     end
     available = c.extent - origin 
+    ### here ###
     c.data[1:available] = c.data[(origin+1):c.extent] #index
     c.extent = available
     c.origin = 0
@@ -285,7 +285,6 @@ end
 # Chunked Input Buffer ------------ #
 
 function frame_message(c::ChunkedInputBuffer)
-    #println("frame_message")
     if c.frame != nothing
         discard_message(c)
     end
@@ -295,7 +294,6 @@ function frame_message(c::ChunkedInputBuffer)
     while p < extent
         available = extent - p
         if available < 2
-            #println("available < 2", available)
             break
         end
 
@@ -307,11 +305,9 @@ function frame_message(c::ChunkedInputBuffer)
         p += 2
         if chunk_size == 0
             c.limit = p
-            #println("panes", length(panes))
             c.frame = MessageFrame(Base.view(c.data_view, (origin+1):c.limit), panes) #index
             return true
         end
-        #println("chunk_size ", chunk_size)
         q = p + chunk_size
         push!(panes, (p - origin, q - origin))
         p = q
@@ -377,6 +373,11 @@ function Base.write(c::ChunkedOutputBuffer, b::AbstractArray{UInt8})
         else
             wrote = min(to_write, remaining)
             new_end = c._end + wrote
+
+            if new_end > length(c.data)
+                resize!(c.data, new_end)
+            end
+        
             c.data[(c._end+1):new_end] = b[(pos+1):(pos+wrote)] #index
             c._end = new_end
             pos += wrote
@@ -397,6 +398,10 @@ function chunk(c::ChunkedOutputBuffer)
     c.header = c._end
     c._start = c.header + 2
     c._end = c._start
+
+    if c._start > length(c.data)
+        resize!(c.data, c._start)
+    end
     c.data[(c.header+1):c._start] = [0x00,0x00] #index
 end
 

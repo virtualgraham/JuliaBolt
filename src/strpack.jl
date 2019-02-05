@@ -30,7 +30,7 @@ Original notices:
 
 mutable struct Structure
     tag::UInt8
-    fields::Array
+    fields::Array{Any}
 
     Structure(tag, fields) = new(tag, fields)
     Structure(tag) = new(tag, [])

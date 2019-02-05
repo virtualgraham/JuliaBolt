@@ -1,6 +1,6 @@
 using Test
 using Mmap
-using DataStructures
+using OrderedCollections
 
 include("../../src/io.jl")
 include("../../src/strpack.jl")
