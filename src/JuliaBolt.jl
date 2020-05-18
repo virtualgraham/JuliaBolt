@@ -176,7 +176,7 @@ mutable struct Connection
     responses::Array{AbstractResponse}
     user_agent::String
     auth_dict::Dict
-    last_run_statement::Union{String, Nothing}
+    # last_run_statement::Union{String, Nothing}
     max_connection_lifetime::Integer
     creation_timestamp::Integer
     closed::Bool
@@ -227,7 +227,7 @@ mutable struct Connection
         
         return new(protocol_version, address, sock, ServerInfo(Sockets.getpeername(sock), protocol_version), 
                 BufferedInputStream(sock), ChunkedInputBuffer(), output_buffer, Packer(output_buffer), Unpacker(), AbstractResponse[], user_agent, auth_dict,
-                    nothing, max_connection_lifetime, creation_timestamp, false, false, false, nothing)
+                    max_connection_lifetime, creation_timestamp, false, false, false, nothing)
     end
 end
 
@@ -450,13 +450,13 @@ function fetch(c::Connection)
     if summary_signature == 0x70
         handle_success(response, if (summary_metadata !== nothing) summary_metadata else Dict() end)
     elseif summary_signature == 0x7E
-        c.last_run_statement = nothing
+        # c.last_run_statement = nothing
         handle_ignored(response, if (summary_metadata !== nothing) summary_metadata else Dict() end)
     elseif summary_signature == 0x7F
-        c.last_run_statement = nothing
+        # c.last_run_statement = nothing
         handle_failure(response, if (summary_metadata !== nothing) summary_metadata else Dict() end)
     else  
-        c.last_run_statement = nothing
+        # c.last_run_statement = nothing
         throw(ErrorException("Unexpected response message with signature $(summary_signature)"))
     end
 
