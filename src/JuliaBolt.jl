@@ -117,7 +117,7 @@ end
 
 function version_info(s::ServerInfo)::Union{Array{Integer}, Nothing}
 
-    if agent(s) == nothing
+    if agent(s) === nothing
         return nothing
     end
         
@@ -138,14 +138,14 @@ end
 # Server Info --------------------- #
 
 function supports(s::ServerInfo, feature::String)::Bool
-    if agent(s) == nothing
+    if agent(s) === nothing
         return false
     elseif !startswith(agent(s), "Neo4j/")
         return false
     elseif feature == "bytes"
         return version_info(s) >= [3,2]
-    elseif feature == "statement_reuse"
-        return version_info(s) >= [3,2]
+    # elseif feature == "statement_reuse"
+    #     return version_info(s) >= [3,2]
     elseif feature == "run_metadata"
         return version_info(s) >= [3]
     else 
@@ -265,37 +265,38 @@ end
 # Connection ---------------- #
 
 function bolt_run(c::Connection, statement::String, parameters=nothing; bookmarks=nothing, metadata=nothing, timeout=nothing, handlers...)
-    if supports(c.server, "statement_reuse")
-        if uppercase(statement) ∉ ("BEGIN", "COMMIT", "ROLLBACK")
-            if statement == c.last_run_statement
-                statement = ""
-            else
-                c.last_run_statement = statement
-            end
-        end
-    end
+    println("bold_run $statement")
+    # if supports(c.server, "statement_reuse")
+    #     if uppercase(statement) ∉ ("BEGIN", "COMMIT", "ROLLBACK")
+    #         if statement == c.last_run_statement
+    #             statement = ""
+    #         else
+    #             c.last_run_statement = statement
+    #         end
+    #     end
+    # end
 
-    if parameters == nothing
+    if parameters === nothing
         parameters = Dict()
     end
 
     if c.protocol_version >= 3
         extra = Dict()
-        if bookmarks != nothing
+        if bookmarks !== nothing
             extra["bookmarks"] = bookmarks
         end
-        if metadata != nothing
+        if metadata !== nothing
             extra["tx_metadata"] = metadata
         end
-        if timeout != nothing
+        if timeout !== nothing
             extra["tx_timeout"] = Integer(floor(1000 * timeout))
         end
         fields = [statement, parameters, extra]
     else
-        if metadata != nothing
+        if metadata !== nothing
             throw(ErrorException("Transaction metadata is not supported in Bolt v$(c.protocol_version)"))
         end
-        if timeout != nothing
+        if timeout !== nothing
             throw(ErrorException("Transaction timeouts are not supported in Bolt v$(c.protocol_version)"))
         end
         field = [statement, parameters]
@@ -321,28 +322,28 @@ end
 function bolt_begin(c::Connection; timeout::Union{Number, Nothing}=nothing, bookmarks::Union{Vector, Nothing}=nothing, metadata::Union{Dict, Nothing}=nothing, handlers...)
     if c.protocol_version >= 3
         extra = Dict()
-        if bookmarks != nothing
+        if bookmarks !== nothing
             extra["bookmarks"] = bookmarks
         end
-        if metadata != nothing
+        if metadata !== nothing
             extra["tx_metadata"] = metadata
         end
-        if timeout != nothing
+        if timeout !== nothing
             extra["tx_timeout"] = Integer(floor(1000*timeout))
         end
         append(c, 0x11, [extra], Response(c; handlers...))
     else
         extra = Dict()
-        if bookmarks != nothing
+        if bookmarks !== nothing
             if c.protocol_version < 2
                 extra["bookmark"] = last_bookmark(bookmarks)
             end
             extra["bookmarks"] = bookmarks
         end
-        if metadata != nothing
+        if metadata !== nothing
             throw(ErrorException("Transaction metadata is not supported in Bolt v$(c.protocol_version)"))
         end
-        if timeout != nothing
+        if timeout !== nothing
             throw(ErrorException("Transaction metadata is not supported in Bolt v$(c.protocol_version)"))
         end  
         run(c, "BEGIN", extra; handlers...)
@@ -363,7 +364,7 @@ end
 function last_bookmark(bookmarks)
     last = nothing
     for bookmark in bookmarks
-        if last == nothing
+        if last === nothing
             last = bookmark
         else
             last = last_bookmark(last, bookmark)
@@ -397,10 +398,11 @@ end
 # Connection ---------------------- #
 
 function append(c::Connection, signiture::UInt8, fields=[], response::Union{AbstractResponse, Nothing}=nothing)
+    println("append field: $fields")
     pack_struct(c.packer, signiture, fields)
     chunk(c.output_buffer)
     chunk(c.output_buffer)
-    if response != nothing
+    if response !== nothing
         push!(c.responses, response) 
     end
 end
@@ -416,6 +418,7 @@ end
 
 function send(c::Connection) 
     data = view(c.output_buffer)
+    println(data)
     Base.write(c.socket, data)
     clear(c.output_buffer)
 end
@@ -427,7 +430,7 @@ function fetch(c::Connection)
         throw(ErrorException("Failed to read from closed connection."))
     elseif c.defunct
         throw(ErrorException("Failed to read from closed connection."))
-    elseif c.responses == nothing || length(c.responses) == 0
+    elseif c.responses === nothing || length(c.responses) == 0
         return 0, 0
     end
 
@@ -439,7 +442,7 @@ function fetch(c::Connection)
         handle_records(c.responses[1], details)
     end
 
-    if summary_signature == nothing
+    if summary_signature === nothing
         return length(details), 0
     end
     
@@ -448,13 +451,13 @@ function fetch(c::Connection)
     response.complete = true
 
     if summary_signature == 0x70
-        handle_success(response, if (summary_metadata != nothing) summary_metadata else Dict() end)
+        handle_success(response, if (summary_metadata !== nothing) summary_metadata else Dict() end)
     elseif summary_signature == 0x7E
         c.last_run_statement = nothing
-        handle_ignored(response, if (summary_metadata != nothing) summary_metadata else Dict() end)
+        handle_ignored(response, if (summary_metadata !== nothing) summary_metadata else Dict() end)
     elseif summary_signature == 0x7F
         c.last_run_statement = nothing
-        handle_failure(response, if (summary_metadata != nothing) summary_metadata else Dict() end)
+        handle_failure(response, if (summary_metadata !== nothing) summary_metadata else Dict() end)
     else  
         c.last_run_statement = nothing
         throw(ErrorException("Unexpected response message with signature $(summary_signature)"))
@@ -599,10 +602,10 @@ end
 # Response ------------------------ #
 
 function handle_success(response::Response, metadata::Dict)
-    if response.on_success != nothing
+    if response.on_success !== nothing
         response.on_success(response, metadata)
     end 
-    if response.on_summary != nothing
+    if response.on_summary !== nothing
         response.on_summary(response, metadata)
     end
 end
@@ -611,10 +614,10 @@ end
 
 function handle_failure(response::Response, metadata::Dict)
     bolt_reset(response.connection)
-    if response.on_failure != nothing
+    if response.on_failure !== nothing
         response.on_failure(response, metadata)
     end 
-    if response.on_summary != nothing
+    if response.on_summary !== nothing
         response.on_summary(response, metadata)
     end 
     throw(hydrate_cypher_error(metadata))
@@ -623,7 +626,7 @@ end
 # Response ------------------------ #
 
 function handle_records(response::Response, records::Array)
-    if response.on_records != nothing
+    if response.on_records !== nothing
         response.on_records(response, records)
     end 
 end
@@ -631,10 +634,10 @@ end
 # Response ------------------------ #
 
 function handle_ignored(response::Response, metadata::Union{Dict, Nothing}=nothing)
-    if response.on_ignored != nothing
+    if response.on_ignored !== nothing
         response.on_ignored(response, metadata)
     end 
-    if response.on_summary != nothing
+    if response.on_summary !== nothing
         response.on_summary(response, metadata)
     end
 end
@@ -688,7 +691,7 @@ mutable struct ConnectionPool <: AbstractConnectionPool
     max_connection_pool_size
     connection_acquisition_timeout
     connections::Dict
-    lock::Threads.Mutex
+    lock::ReentrantLock
     cond::Condition
     closed::Bool
 
@@ -700,7 +703,7 @@ mutable struct ConnectionPool <: AbstractConnectionPool
         connection_acquisition_timeout = if haskey(config, :connection_acquisition_timeout) 
                                                 config[:connection_acquisition_timeout] 
                                                 else DEFAULT_CONNECTION_ACQUISITION_TIMEOUT end
-       new(connector, address, connection_error_handler, max_connection_pool_size, connection_acquisition_timeout, Dict(), Threads.Mutex(), Condition(), false)
+       new(connector, address, connection_error_handler, max_connection_pool_size, connection_acquisition_timeout, Dict(), ReentrantLock(), Condition(), false)
     end
 end
 
@@ -727,7 +730,7 @@ function acquire_direct(c::ConnectionPool, address)
                 connection = connections[i]
                 if connection.closed || connection.defunct || timedout(connection)
                     splice!(connections,i)
-5.                else
+        else
                     i += 1
                 end
                 if !connection.in_use
@@ -764,7 +767,7 @@ function acquire_direct(c::ConnectionPool, address)
             end
         end
     finally
-        try unlock(c.lock) catch end
+        try unlock(c.lock) catch; println("EXCEPTION unlock(c.lock)") end
     end
 end
 
@@ -783,7 +786,7 @@ function release(c::ConnectionPool, connection)
         connection.in_use = false
         notify(c.cond)
     finally
-        try unlock(c.lock) catch end
+        try unlock(c.lock) catch; println("EXCEPTION unlock(c.lock)") end
     end
 end
 
@@ -828,7 +831,7 @@ function deactivate(c::ConnectionPool, address)
         end
 
     finally
-        try unlock(c.lock) catch end
+        try unlock(c.lock) catch; println("EXCEPTION unlock(c.lock)") end
     end
 end
 
@@ -848,7 +851,7 @@ function remove(c::ConnectionPool, address)
         end
         
     finally
-        try unlock(c.lock) catch end
+        try unlock(c.lock) catch; println("EXCEPTION unlock(c.lock)") end
     end
 end
 
@@ -869,7 +872,7 @@ function close(c::ConnectionPool)
             end 
         end
     finally
-        try unlock(c.lock) catch end
+        try unlock(c.lock) catch; println("EXCEPTION unlock(c.lock)") end
     end
 end
 
@@ -881,7 +884,7 @@ function is_closed(c::ConnectionPool)
         lock(c.lock)
         return c.closed
     finally
-        try unlock(c.lock) catch end
+        try unlock(c.lock) catch; println("EXCEPTION unlock(c.lock)") end
     end
 end
 

@@ -108,7 +108,7 @@ function read(m::MessageFrame, n::Integer)
 
         read = _end - _start
 
-        if value != nothing
+        if value !== nothing
             if is_view
                 new_value = zeros(UInt8, n)
                 new_value[1:offset] = value[1:offset] #index
@@ -285,7 +285,7 @@ end
 # Chunked Input Buffer ------------ #
 
 function frame_message(c::ChunkedInputBuffer)
-    if c.frame != nothing
+    if c.frame !== nothing
         discard_message(c)
     end
     panes = Tuple{Integer, Integer}[]
@@ -318,7 +318,7 @@ end
 # Chunked Input Buffer ------------ #
 
 function discard_message(c::ChunkedInputBuffer)
-    if c.frame != nothing
+    if c.frame !== nothing
         close(c.frame)
         c.origin = c.limit
         c.limit = -1

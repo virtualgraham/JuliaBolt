@@ -60,7 +60,7 @@ include("../../src/io.jl")
         load(buffer, b"\x00\x05hello\x00\x00")
         load(buffer, b"\x00\x07bonjour\x00\x00")
         
-        @test buffer.frame == nothing
+        @test buffer.frame === nothing
     end
 
     @testset "test_should_be_able_to_frame_message" begin
@@ -109,7 +109,7 @@ include("../../src/io.jl")
 
         discard_message(buffer)
         
-        @test buffer.frame == nothing
+        @test buffer.frame === nothing
     end
 
     @testset "test_should_be_able_to_discard_empty_message" begin
@@ -119,7 +119,7 @@ include("../../src/io.jl")
 
         discard_message(buffer)
         
-        @test buffer.frame == nothing
+        @test buffer.frame === nothing
     end
 
     @testset "test_discarding_message_should_move_read_pointer" begin
