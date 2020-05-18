@@ -55,14 +55,12 @@ end
 # Packer -------------------------- #
 
 function pack(p::Packer, value::Nothing)
-    println("pack nothing")
     write(p, [0xC0]) # NULL
 end
 
 # Packer -------------------------- #
 
 function pack(p::Packer, value::Bool)
-    println("pack bool $value")
     if value
         write(p, [0xC3]) # TRUE
     else
@@ -73,7 +71,6 @@ end
 # Packer -------------------------- #
 
 function pack(p::Packer, value::Float64)
-    println("pack float $value")
     write(p, [0xC1])
     write(p, struct_pack(value))
 end
@@ -81,7 +78,6 @@ end
 # Packer -------------------------- #
 
 function pack(p::Packer, value::Integer)
-    println("pack int $value")
     if -16 <= value < 128
         write(p, PACKED_UINT_8[mod(value, 256)+1]) #index
     elseif -128 <= value < -16
@@ -104,7 +100,6 @@ end
 # Packer -------------------------- #
 
 function pack(p::Packer, value::String)
-    println("pack string $value")
     data = Array{UInt8}(value)
     pack_string_header(p, length(data))
     pack_raw(p, data)
@@ -113,7 +108,6 @@ end
 # Packer -------------------------- #
 
 function pack(p::Packer, value::Array{UInt8})
-    println("pack int array $value")
     pack_bytes_header(p, length(value))
     pack_raw(p, value)
 end
@@ -121,7 +115,6 @@ end
 # Packer -------------------------- #
 
 function pack(p::Packer, value::AbstractArray)
-    println("pack array $value")
     pack_list_header(p, length(value))
     for item in value
         pack(p, item)
@@ -131,7 +124,6 @@ end
 # Packer -------------------------- #
 
 function pack(p::Packer, value::AbstractDict)
-    println("pack dict $value")
     pack_map_header(p, length(value))
     for (k, v) in value
         pack(p, k)
@@ -142,7 +134,6 @@ end
 # Packer -------------------------- #
 
 function pack(p::Packer, value::Structure)
-    println("pack struct $value")
     pack_struct(p, value.tag, value.fields)
 end
 

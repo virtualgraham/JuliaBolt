@@ -265,7 +265,6 @@ end
 # Connection ---------------- #
 
 function bolt_run(c::Connection, statement::String, parameters=nothing; bookmarks=nothing, metadata=nothing, timeout=nothing, handlers...)
-    println("bold_run $statement")
     # if supports(c.server, "statement_reuse")
     #     if uppercase(statement) ∉ ("BEGIN", "COMMIT", "ROLLBACK")
     #         if statement == c.last_run_statement
@@ -398,7 +397,6 @@ end
 # Connection ---------------------- #
 
 function append(c::Connection, signiture::UInt8, fields=[], response::Union{AbstractResponse, Nothing}=nothing)
-    println("append field: $fields")
     pack_struct(c.packer, signiture, fields)
     chunk(c.output_buffer)
     chunk(c.output_buffer)
@@ -418,7 +416,6 @@ end
 
 function send(c::Connection) 
     data = view(c.output_buffer)
-    println(data)
     Base.write(c.socket, data)
     clear(c.output_buffer)
 end
